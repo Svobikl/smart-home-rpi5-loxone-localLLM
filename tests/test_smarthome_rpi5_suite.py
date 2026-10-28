@@ -36,6 +36,7 @@ _FORBIDDEN_B64_TOKENS = [
     b"MTMuNTQxNA==",      # private longitude
     b"L2hvbWUvc3ZvYmlr",  # local home path token
     b"MzU3NjA0NjQ0Ng==",  # real inverter serial number
+    b"MWY1YjNiZjctMDBkNy1iMWNkLWZmZmY5MmRkZTU4NjI4YTQ=",  # private Loxone UUID
 ]
 
 _SECRET_AND_IP_PATTERNS = [

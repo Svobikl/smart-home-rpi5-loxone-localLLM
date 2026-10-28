@@ -162,5 +162,23 @@
         "role": "Benchmarked only"
       }
     ]
+  },
+  "multiturn_smarthome_ttft_optimization": {
+    "scenario": "User sends 'Otevři dveře' (or 'Rozsviť v garáži') immediately after a multi-turn weather forecast query",
+    "before_optimization": {
+      "turn1_prefill_chars": 3000,
+      "turn1_tool_call_latency_ms": 16000.0,
+      "turn2_prefill_chars": 1608,
+      "turn2_litert_sse_ttft_ms": 6261.1,
+      "end_to_end_user_perceived_ttft_ms": 22341.0
+    },
+    "after_optimization": {
+      "turn1_deterministic_fast_path_ms": 1.71,
+      "smarthome_ctl_door_open_ms": 80.58,
+      "turn2_single_turn_compacted_chars": 185,
+      "turn2_litert_sse_ttft_ms": 1906.29,
+      "end_to_end_user_perceived_ttft_ms": 1988.68,
+      "end_to_end_total_completion_ms": 2654.71
+    }
   }
 }

@@ -41,3 +41,8 @@ python3 ~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py blinds obývák 
 python3 ~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py blinds obývák close
 python3 ~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py blinds obývák stop
 ```
+
+## 6. Otevření vstupních dveří (zádveří — elektrický zámek / Loxone impulz)
+```bash
+python3 ~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py door open
+```

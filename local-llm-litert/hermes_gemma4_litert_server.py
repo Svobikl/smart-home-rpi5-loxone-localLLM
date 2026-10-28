@@ -71,6 +71,72 @@ def load_minimax_api_key():
     return os.environ.get("MINIMAX_API_KEY", "")
 
 
+import unicodedata
+
+_ROOM_PATTERNS = [
+    (("zadveri", "vstup", "predsin"), "zádveří"),
+    (("obyvak", "obyvac", "obyvaci"), "obývák"),
+    (("kuchyn",), "kuchyně"),
+    (("chodb",), "chodba"),
+    (("garaz",), "garáž"),
+    (("pracovn", "kancelar", "office"), "pracovna"),
+    (("mala koupeln", "male koupeln"), "malá koupelna"),
+    (("velka koupeln", "velke koupeln", "koupeln"), "velká koupelna"),
+    (("loznice 2", "loznici 2", "detsky 1"), "ložnice 2"),
+    (("loznice 3", "loznici 3", "detsky 2"), "ložnice 3"),
+    (("loznice 1", "loznici 1", "loznic"), "ložnice 1"),
+    (("technick",), "technická místnost"),
+    (("wc 2", "zachod 2", "toaleta 2"), "wc 2"),
+    (("wc 1", "wc", "zachod", "toaleta"), "wc 1"),
+    (("satn",), "šatna"),
+]
+
+
+def _strip_accents(text: str) -> str:
+    nfkd = unicodedata.normalize("NFKD", (text or "").lower())
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).strip()
+
+
+def resolve_direct_smarthome_tool_call(
+    user_text: str,
+    ctl_script: str = "~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py",
+):
+    raw = (user_text or "").strip()
+    if not raw or len(raw) > 95:
+        return None
+    norm = _strip_accents(raw)
+    norm_clean = re.sub(r"[^a-z0-9\s]", " ", norm)
+    norm_clean = re.sub(r"\s+", " ", norm_clean).strip()
+    if any(sep in norm_clean for sep in (" a pak ", " a zaroven ", " potom ", " pocasi", " predpoved", " vyhledej", " najdi ", " zjisti na ")):
+        return None
+    if re.search(r"\b(otevr\w*|odemkn\w*|pust\w*|bzucak\w*)\b.*\b(vstupn\w*\s+|vchodov\w*\s+)?dver\w*\b", norm_clean) or re.search(
+        r"\b(vstupn\w*\s+|vchodov\w*\s+)?dver\w*\b.*\b(otevr\w*|odemkn\w*)\b", norm_clean
+    ):
+        return {"name": "terminal", "arguments": {"command": f"python3 {ctl_script} door open"}}
+    if "zaluzi" in norm_clean or "stineni" in norm_clean:
+        if any(w in norm_clean for w in ("otevr", "vytahn", "nahoru")):
+            return {"name": "terminal", "arguments": {"command": f"python3 {ctl_script} blinds obývák open"}}
+        if any(w in norm_clean for w in ("zavr", "stahn", "dolu", "zatah")):
+            return {"name": "terminal", "arguments": {"command": f"python3 {ctl_script} blinds obývák close"}}
+        if any(w in norm_clean for w in ("zastav", "stop")):
+            return {"name": "terminal", "arguments": {"command": f"python3 {ctl_script} blinds obývák stop"}}
+    if norm_clean in ("stav svetel", "svetla", "jaka svetla sviti", "ktera svetla sviti", "vypis svetla"):
+        return {"name": "terminal", "arguments": {"command": f"python3 {ctl_script} lights"}}
+    is_light_on = bool(re.search(r"\b(rozsvit\w*|zapn\w*\s+svetl\w*)\b", norm_clean))
+    is_light_off = bool(re.search(r"\b(zhasn\w*|vypn\w*\s+svetl\w*)\b", norm_clean))
+    if not (is_light_on or is_light_off) and "svetl" in norm_clean:
+        if re.search(r"\bzapn\w*\b", norm_clean):
+            is_light_on = True
+        elif re.search(r"\bvypn\w*\b", norm_clean):
+            is_light_off = True
+    if is_light_on or is_light_off:
+        action = "on" if is_light_on else "off"
+        for kws, room_label in _ROOM_PATTERNS:
+            if any(kw in norm_clean for kw in kws):
+                return {"name": "terminal", "arguments": {"command": f'python3 {ctl_script} light "{room_label}" {action}'}}
+    return None
+
+
 def classify_task_category(text: str) -> str:
     if not text:
         return "general_local"
@@ -453,7 +519,50 @@ class Handler(BaseHTTPRequestHandler):
                 last_user_text = str(c)
                 break
 
-        task_cat = classify_task_category(last_user_text)
+        last_role = messages[-1].get("role", "user") if messages else "user"
+        can_emit_tc = bool(tools and last_role != "tool")
+        if can_emit_tc and last_role == "user":
+            direct_tc = resolve_direct_smarthome_tool_call(last_user_text)
+            if direct_tc is not None:
+                call_id = f"call_{int(time.time()*1000)}"
+                tc_args_str = json.dumps(direct_tc["arguments"], ensure_ascii=False)
+                if stream_req:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    cmpl_id = f"chatcmpl-fastpath-{int(time.time()*1000)}"
+                    self._emit_sse_chunk({
+                        "id": cmpl_id,
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "gemma-4-E2B-it",
+                        "choices": [{"index": 0, "delta": {"role": "assistant", "content": None, "tool_calls": [{"index": 0, "id": call_id, "type": "function", "function": {"name": direct_tc["name"], "arguments": tc_args_str}}]}, "finish_reason": None}],
+                    })
+                    self._emit_sse_chunk({
+                        "id": cmpl_id,
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "gemma-4-E2B-it",
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+                    })
+                    self.wfile.write(b"data: [DONE]\n\n")
+                    self.wfile.flush()
+                    return
+                self._send_json(200, {
+                    "id": f"chatcmpl-fastpath-{int(time.time()*1000)}",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": "gemma-4-E2B-it",
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": None, "tool_calls": [{"index": 0, "id": call_id, "type": "function", "function": {"name": direct_tc["name"], "arguments": tc_args_str}}]}, "finish_reason": "tool_calls"}],
+                    "usage": {"prompt_tokens": 16, "completion_tokens": 16, "total_tokens": 32},
+                })
+                return
+
+        if last_role == "tool" and str(messages[-1].get("content") or "").strip().startswith(("OK:", "Rozsvíceno", "Zhasnuto", "MySmartHome")):
+            task_cat = "general_local"
+        else:
+            task_cat = classify_task_category(last_user_text)
         # Fast-path for Hermes automatic session title generation prompts (saves ~18s after chat completion)
         full_msgs_str = " ".join(str(m.get("content", "")) for m in messages).lower()
         if not tools and ("session title" in full_msgs_str or "short title" in full_msgs_str or "concise title" in full_msgs_str or "generate a title" in full_msgs_str):

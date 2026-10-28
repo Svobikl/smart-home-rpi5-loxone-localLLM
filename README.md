@@ -183,6 +183,20 @@ Out of the box, connecting **Hermes Agent (`NousResearch/hermes-agent`)** to a s
    - **Default (`general_local`):** Runs 100% locally on **`Gemma 4 E2B-it`** with real-time token streaming.
    - **Specialist (`research`, `implementation`, `implementation_plan`):** Automatically routes weather forecasts, web searches, URLs, deep research, and coding tasks to **`MiniMax-M3.1-Flash`** (with automatic fallback to local `Gemma 4 E2B-it` if offline).
 
+
+### Multi-Turn Telegram TTFT Optimization & Sub-2ms Smart-Home Fast-Path
+In real-world multi-turn Telegram chats, a simple command like *"Otevři dveře"* or *"Rozsviť v garáži"* previously required **2 LLM turns** and re-prefilled up to 6 turns (`1,608–3,000 chars`) of prior conversation history into stateless `ENGINE.create_conversation()` calls:
+- **History-Safe Task Classification (`classify_hermes_messages_route`):** Inspects **only the latest user message** so a prior weather query (*"Jaké je dneska počasí?"*) never contaminates a subsequent smart-home action (*"Otevři dveře"*).
+- **Turn-1 Deterministic Smart-Home Fast-Path (`resolve_direct_smarthome_tool_call`):** Emits the `terminal` tool call (`smarthome_ctl.py door open | light | blinds | lights`) in **`1.71 ms`** (bypassing the 16-second Turn-1 schema prefill).
+- **Single-Turn Context Compaction (`compact_hermes_prompt_for_e2b`):** On Turn 2 (`role == "tool"`), strips stale multi-turn chat history and passes only the current user command + tool result (`185 chars` instead of `1,608 chars`), cutting real-world Turn-2 LiteRT SSE TTFT from `6.26 s` down to **`1.91 s`** (`1.99 s` total user-perceived TTFT from message send to first streamed token).
+
+| Multi-Turn Smart-Home Stage (`"Otevři dveře"` after weather query) | Before Optimization | After Optimization (RPi5 Live) | Speedup |
+| :--- | :---: | :---: | :---: |
+| **Turn 1 — Emit `tool_call` (`smarthome_ctl.py door open`)** | `16,000.0 ms` (`3,000 chars`) | **`1.71 ms` (Fast-Path)** | **`9,356x` faster** |
+| **Physical HA/Loxone Action (`button.otevreni_vstupnich_dveri`)** | Manual lookup loop | **`80.58 ms` (1-step CLI)** | **1 step** |
+| **Turn 2 — LiteRT-LM SSE TTFT (first token in Telegram)** | `6,261.1 ms` (`1,608 chars`) | **`1,906.29 ms` (`185 chars`)** | **`3.3x` faster** |
+| **End-to-End User-Perceived TTFT (Send -> Action -> First Token)** | `> 22,300 ms` | **`1,988.68 ms` (`1.99 s`)** | **`> 11x` faster** |
+
 ---
 
 ## 5. Quick Start & Installation Guide
