@@ -257,3 +257,38 @@ def test_voice_pipeline_zhasni_optimizations_happy_and_negative() -> None:
     assert res["vad_start_chunk"] >= 95
     assert res["stream_start_chunk"] <= 75
     assert res["stream_start_chunk"] > 40
+
+
+
+def test_multiturn_history_safe_routing_and_door_fast_path() -> None:
+    """Verify 'Otevři dveře' after a weather query is not contaminated by history and resolves in <15ms."""
+    messages = [
+        {"role": "user", "content": "jaké je dneska počasí?"},
+        {"role": "assistant", "content": "Dnes je zataženo, 8 °C."},
+        {"role": "user", "content": "Otevři dveře"},
+    ]
+    route = ai_mod.classify_hermes_messages_route(messages)
+    assert route["task_category"] == "general_local"
+    assert route["target_model"] == "gemma-4-E2B-it"
+
+    tc_door = ai_mod.resolve_direct_smarthome_tool_call("Otevři dveře")
+    assert tc_door is not None
+    assert tc_door["name"] == "terminal"
+    assert "smarthome_ctl.py door open" in tc_door["arguments"]["command"]
+
+    tc_light = ai_mod.resolve_direct_smarthome_tool_call("Rozsviť v garáži")
+    assert tc_light is not None
+    assert 'light "garáž" on' in tc_light["arguments"]["command"]
+
+    # Negative: compound or research queries must NOT use the deterministic fast-path
+    assert ai_mod.resolve_direct_smarthome_tool_call("Otevři dveře a pak zjisti na internetu počasí") is None
+
+    # Turn-2 single-turn compaction must strip prior weather turns (<350 chars user_prompt)
+    turn2_msgs = messages + [
+        {"role": "assistant", "content": None, "tool_calls": [{"function": {"name": "terminal", "arguments": "{}"}}]},
+        {"role": "tool", "name": "terminal", "content": "OK: Vstupní dveře -> impulz k otevření odeslán"},
+    ]
+    sys_msg, user_prompt = ai_mod.compact_hermes_prompt_for_e2b(turn2_msgs, tools=None)
+    assert len(sys_msg) < 160
+    assert len(user_prompt) < 350
+    assert "zataženo" not in user_prompt

@@ -1,3 +1,11 @@
+agent:
+  max_turns: 15
+
+tool_loop_guardrails:
+  enabled: true
+  hard_stop_enabled: true
+  non_interactive_hard_stop_enabled: true
+
 model:
   default: gemma-4-E2B-it
   provider: custom

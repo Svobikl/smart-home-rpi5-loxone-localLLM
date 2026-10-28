@@ -52,6 +52,7 @@ _E2B_SMART_HOME_CHEATSHEET = (
     "- Stav všech světel: python3 ~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py lights\n"
     "- Zapnutí/vypnutí světla v místnosti: python3 ~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py light \"<místnost>\" <on|off|toggle>\n"
     "- Žaluzie v obýváku: python3 ~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py blinds obývák <open|close|stop>\n"
+    "- Otevření vstupních dveří (zádveří): python3 ~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py door open\n"
     "- Rychlá paměť: python3 ~/.hermes/skills/rpi5-fast-memory/scripts/fast_mem.py search \"<dotaz>\"\n"
     "- Zdraví RPi5 a služeb: python3 ~/.hermes/skills/heartbeat-monitor/scripts/heartbeat_check.py --compact"
 )
@@ -85,26 +86,29 @@ def classify_task_category(text: str) -> str:
 def compact_prompt_for_e2b(messages, tools=None, max_total_chars=2800):
     convo_parts = []
     last_role = messages[-1].get("role", "user") if messages else "user"
-    for m in messages[-6:]:
-        role = m.get("role", "user")
-        if role == "system":
-            continue
-        content = m.get("content", "")
-        if isinstance(content, list):
-            content = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
-        content_str = str(content or "").strip()
-        if role == "assistant":
-            tcs = m.get("tool_calls")
-            if tcs and isinstance(tcs, list):
-                fn = tcs[0].get("function", {})
-                convo_parts.append(f"Asistent zavolal nástroj: {fn.get('name')}({fn.get('arguments')})")
-            elif content_str:
-                convo_parts.append(f"Asistent: {content_str[:400]}")
-        elif role == "tool":
-            t_name = m.get("name") or m.get("tool_call_id") or "tool"
-            convo_parts.append(f"Výsledek nástroje ({t_name}):\n{content_str[:900]}")
-        else:
-            convo_parts.append(f"Uživatel: {content_str[:600]}")
+    if last_role == "tool":
+        latest_user = ""
+        for m in reversed(messages[:-1]):
+            if m.get("role") == "user":
+                c = m.get("content", "")
+                if isinstance(c, list):
+                    c = " ".join(x.get("text", "") if isinstance(x, dict) else str(x) for x in c)
+                latest_user = str(c or "").strip()
+                break
+        tool_msg = messages[-1]
+        t_name = tool_msg.get("name") or tool_msg.get("tool_call_id") or "tool"
+        t_out = str(tool_msg.get("content") or "").strip()[:700]
+        if latest_user:
+            convo_parts.append(f"Uživatel: {latest_user[:240]}")
+        convo_parts.append(f"Výsledek nástroje ({t_name}):\n{t_out}")
+    else:
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                c = m.get("content", "")
+                if isinstance(c, list):
+                    c = " ".join(x.get("text", "") if isinstance(x, dict) else str(x) for x in c)
+                convo_parts.append(f"Uživatel: {str(c or '').strip()[:500]}")
+                break
 
     tool_lines = []
     if tools and last_role != "tool":

@@ -294,6 +294,17 @@ def cmd_blinds_action(env: dict, room: str, action: str) -> str:
     return f"OK: Obývací pokoj – Žaluzie ({eid}) -> {svc}"
 
 
+def cmd_door_action(env: dict, action: str = "open") -> str:
+    eid = "button.otevreni_vstupnich_dveri"
+    act = strip_accents(action or "open")
+    if act not in ("open", "otevri", "otevrit", "unlock", "odemkni", "pulse", "press"):
+        raise ValueError(f"Neplatná akce pro vstupní dveře: {action!r}, použij: open")
+    ha_request(env, "POST", "/api/services/button/press", {"entity_id": eid})
+    st_obj = ha_request(env, "GET", f"/api/states/{eid}")
+    st_val = st_obj.get("state", "unknown") if isinstance(st_obj, dict) else "unknown"
+    return f"OK: Vstupní dveře – Zádveří ({eid}) -> impulz k otevření odeslán (stav: {st_val})"
+
+
 def cmd_env_audit(env: dict) -> dict:
     mode = oct(stat.S_IMODE(ENV_PATH.stat().st_mode)) if ENV_PATH.exists() else "missing"
     return {
@@ -338,6 +349,10 @@ def main():
             if len(args) < 3:
                 raise ValueError("Usage: smarthome_ctl.py blinds <místnost> <open|close|stop>")
             print(scrub_secrets(cmd_blinds_action(env, args[1], args[2]), env))
+            return 0
+        elif cmd == "door":
+            act = args[1] if len(args) > 1 else "open"
+            print(scrub_secrets(cmd_door_action(env, act), env))
             return 0
         elif cmd == "env-audit":
             res = cmd_env_audit(env)

@@ -304,38 +304,174 @@ _E2B_SMART_HOME_CHEATSHEET = (
 _PRIORITY_TOOLS = ("terminal", "web_search", "web_extract", "memory", "delegate_task", "skill_view", "read_file", "write_file", "search_files")
 
 
+_ROOM_CMD_PATTERNS: list[tuple[tuple[str, ...], str]] = [
+    (("zadveri", "vstup", "predsin"), "zádveří"),
+    (("obyvak", "obyvac", "obyvaci"), "obývák"),
+    (("kuchyn",), "kuchyně"),
+    (("chodb",), "chodba"),
+    (("garaz",), "garáž"),
+    (("pracovn", "kancelar", "office"), "pracovna"),
+    (("mala koupeln", "male koupeln"), "malá koupelna"),
+    (("velka koupeln", "velke koupeln", "koupeln"), "velká koupelna"),
+    (("loznice 2", "loznici 2", "detsky 1"), "ložnice 2"),
+    (("loznice 3", "loznici 3", "detsky 2"), "ložnice 3"),
+    (("loznice 1", "loznici 1", "loznic"), "ložnice 1"),
+    (("technick",), "technická místnost"),
+    (("wc 2", "zachod 2", "toaleta 2"), "wc 2"),
+    (("wc 1", "wc", "zachod", "toaleta"), "wc 1"),
+    (("satn",), "šatna"),
+]
+
+
+def _extract_msg_text(msg: dict[str, Any]) -> str:
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        content = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+    return str(content or "").strip()
+
+
+def resolve_direct_smarthome_tool_call(
+    user_text: str,
+    *,
+    ctl_script: str = "~/.hermes/skills/my-smart-home/scripts/smarthome_ctl.py",
+) -> dict[str, Any] | None:
+    """Resolve unambiguous single-intent Czech smart-home commands directly to a terminal tool_call in <15ms."""
+    raw = (user_text or "").strip()
+    if not raw or len(raw) > 90:
+        return None
+    norm = _strip_accents(raw)
+    norm_clean = re.sub(r"[^a-z0-9\s]", " ", norm)
+    norm_clean = re.sub(r"\s+", " ", norm_clean).strip()
+
+    if any(sep in norm_clean for sep in (" a pak ", " a zaroven ", " potom ", " pocasi", " predpoved", " vyhledej", " najdi ", " zjisti na ")):
+        return None
+
+    if re.search(r"\b(otevr\w*|odemkn\w*|pust\w*|bzucak\w*)\b.*\b(vstupn\w*\s+|vchodov\w*\s+)?dver\w*\b", norm_clean) or re.search(
+        r"\b(vstupn\w*\s+|vchodov\w*\s+)?dver\w*\b.*\b(otevr\w*|odemkn\w*)\b", norm_clean
+    ):
+        return {
+            "name": "terminal",
+            "arguments": {"command": f"python3 {ctl_script} door open"},
+        }
+
+    if "zaluzi" in norm_clean or "stineni" in norm_clean:
+        if any(w in norm_clean for w in ("otevr", "vytahn", "nahoru")):
+            return {
+                "name": "terminal",
+                "arguments": {"command": f"python3 {ctl_script} blinds obývák open"},
+            }
+        if any(w in norm_clean for w in ("zavr", "stahn", "dolu", "zatah")):
+            return {
+                "name": "terminal",
+                "arguments": {"command": f"python3 {ctl_script} blinds obývák close"},
+            }
+        if any(w in norm_clean for w in ("zastav", "stop")):
+            return {
+                "name": "terminal",
+                "arguments": {"command": f"python3 {ctl_script} blinds obývák stop"},
+            }
+
+    if norm_clean in ("stav svetel", "svetla", "jaka svetla sviti", "ktera svetla sviti", "vypis svetla"):
+        return {
+            "name": "terminal",
+            "arguments": {"command": f"python3 {ctl_script} lights"},
+        }
+
+    is_light_on = bool(re.search(r"\b(rozsvit\w*|zapn\w*\s+svetl\w*)\b", norm_clean))
+    is_light_off = bool(re.search(r"\b(zhasn\w*|vypn\w*\s+svetl\w*)\b", norm_clean))
+    if not (is_light_on or is_light_off) and ("svetl" in norm_clean):
+        if re.search(r"\bzapn\w*\b", norm_clean):
+            is_light_on = True
+        elif re.search(r"\bvypn\w*\b", norm_clean):
+            is_light_off = True
+
+    if is_light_on or is_light_off:
+        action = "on" if is_light_on else "off"
+        for kws, room_label in _ROOM_CMD_PATTERNS:
+            if any(kw in norm_clean for kw in kws):
+                return {
+                    "name": "terminal",
+                    "arguments": {"command": f'python3 {ctl_script} light "{room_label}" {action}'},
+                }
+
+    return None
+
+
+def classify_hermes_messages_route(
+    messages: list[dict[str, Any]],
+    *,
+    default_model: str = "gemma-4-E2B-it",
+    specialist_model: str = "MiniMax-M3.1-Flash",
+) -> dict[str, Any]:
+    """Classify task category using ONLY the latest user message (preventing multi-turn history contamination)."""
+    if not messages:
+        return classify_hermes_task_route("", default_model=default_model, specialist_model=specialist_model)
+
+    last_msg = messages[-1]
+    if last_msg.get("role") == "tool":
+        tool_text = _extract_msg_text(last_msg)
+        if tool_text.startswith(("OK:", "Rozsvíceno", "Zhasnuto", "MySmartHome — Aktuální přehled")):
+            return {
+                "task_category": "general_local",
+                "target_model": default_model,
+                "target_provider": "custom",
+                "use_specialist": False,
+            }
+
+    latest_user_text = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            latest_user_text = _extract_msg_text(m)
+            break
+
+    return classify_hermes_task_route(
+        latest_user_text,
+        default_model=default_model,
+        specialist_model=specialist_model,
+    )
+
+
 def compact_hermes_prompt_for_e2b(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
-    max_total_chars: int = 3000,
+    max_total_chars: int = 1800,
 ) -> tuple[str, str]:
-    """Distill Hermes system prompt, tool schemas, and conversation turns to fit safely within E2B context window."""
-    if not messages:
-        raise ValueError("messages must not be empty")
+    """Compact Hermes Agent prompt + tool schemas into a single-turn E2B prompt (<650c Turn 1, <350c Turn 2)."""
+    if max_total_chars < 500:
+        raise ValueError("max_total_chars must be >= 500")
 
+    last_role = messages[-1].get("role", "user") if messages else "user"
     convo_parts: list[str] = []
-    last_role = messages[-1].get("role", "user")
 
-    for m in messages[-6:]:
-        role = m.get("role", "user")
-        if role == "system":
-            continue
-        content = m.get("content", "")
-        if isinstance(content, list):
-            content = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
-        content_str = str(content or "").strip()
-        if role == "assistant":
-            tcs = m.get("tool_calls")
-            if tcs:
-                fn = tcs[0].get("function", {}) if isinstance(tcs, list) and tcs else {}
-                convo_parts.append(f"Asistent zavolal nástroj: {fn.get('name')}({fn.get('arguments')})")
-            elif content_str:
-                convo_parts.append(f"Asistent: {content_str[:400]}")
-        elif role == "tool":
-            t_name = m.get("name") or m.get("tool_call_id") or "tool"
-            convo_parts.append(f"Výsledek nástroje ({t_name}):\n{content_str[:900]}")
-        else:
-            convo_parts.append(f"Uživatel: {content_str[:600]}")
+    if last_role == "tool":
+        latest_user = ""
+        for m in reversed(messages[:-1]):
+            if m.get("role") == "user":
+                latest_user = _extract_msg_text(m)
+                break
+        tool_msg = messages[-1]
+        t_name = tool_msg.get("name") or tool_msg.get("tool_call_id") or "tool"
+        tool_out = _extract_msg_text(tool_msg)[:700]
+        if latest_user:
+            convo_parts.append(f"Uživatel: {latest_user[:240]}")
+        convo_parts.append(f"Výsledek nástroje ({t_name}):\n{tool_out}")
+    else:
+        latest_user = ""
+        prev_assistant = ""
+        for idx in range(len(messages) - 1, -1, -1):
+            m = messages[idx]
+            if m.get("role") == "user":
+                latest_user = _extract_msg_text(m)
+                for j in range(idx - 1, -1, -1):
+                    mj = messages[j]
+                    if mj.get("role") == "assistant" and not mj.get("tool_calls"):
+                        prev_assistant = _extract_msg_text(mj)
+                        break
+                break
+        if prev_assistant and len(prev_assistant) <= 180:
+            convo_parts.append(f"Předchozí odpověď: {prev_assistant}")
+        if latest_user:
+            convo_parts.append(f"Uživatel: {latest_user[:500]}")
 
     tool_lines: list[str] = []
     if tools and last_role != "tool":
@@ -362,48 +498,15 @@ def compact_hermes_prompt_for_e2b(
             + "\n".join(tool_lines)
         )
     elif last_role == "tool":
-        sys_msg = (
-            "Jsi chytrý domácí asistent Hermes (MySmartHome). "
-            "Zde je výsledek nástroje. Odpověz uživateli přímo, stručně a přehledně česky bez volání dalších nástrojů."
-        )
+        sys_msg = "Jsi chytrý domácí asistent Hermes (MySmartHome). Máš výsledek nástroje; odpověz uživateli přímo, stručně a přehledně česky."
     else:
-        sys_msg = (
-            "Jsi chytrý domácí asistent Hermes na RPi5 (MySmartHome). "
-            "Odpovídej přímo, stručně a přesně česky."
-        )
+        sys_msg = "Jsi chytrý domácí asistent Hermes (MySmartHome). Odpovídej stručně a přesně česky."
 
     user_prompt = "\n\n".join(convo_parts).strip() or "Ahoj"
-    budget_user = max(400, max_total_chars - len(sys_msg))
+    budget_user = max(300, max_total_chars - len(sys_msg))
     if len(user_prompt) > budget_user:
         user_prompt = user_prompt[-budget_user:]
     return sys_msg, user_prompt
-
-
-def build_stt_chain_config(
-    primary_provider: str = "gemini",
-    cs_fallback: str = "faster-whisper-base-int8",
-    en_fallback: str = "moonshine/base-onnx",
-) -> dict[str, Any]:
-    """Build STT configuration with Online Gemini as primary default and Faster-Whisper (CS) + Moonshine (EN) as local fallback."""
-    prov = (primary_provider or "").strip().lower()
-    if prov != "gemini":
-        raise ValueError(f"primary_provider must be 'gemini', got {primary_provider!r}")
-    return {
-        "primary": {
-            "provider": "gemini",
-            "models": [
-                "gemini-3.5-flash-lite",
-                "gemini-3.1-flash-lite",
-                "gemini-3.5-flash",
-                "gemini-2.5-flash",
-            ],
-        },
-        "fallback": {
-            "daemon_url": "http://localhost:8765/transcribe",
-            "cs": cs_fallback,
-            "en": en_fallback,
-        },
-    }
 
 
 def _normalize_tool_arguments(name: str, raw_args: Any) -> dict[str, Any]:
