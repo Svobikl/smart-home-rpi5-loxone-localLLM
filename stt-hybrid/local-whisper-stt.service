@@ -1,0 +1,14 @@
+[Unit]
+Description=Persistent Hybrid STT Daemon (Primary: Online Gemini -> Fallback: Faster-Whisper CS + Moonshine EN)
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment="HF_HOME=/mnt/nvme/ai_models/hf_cache"
+ExecStart=/usr/bin/numactl --interleave=all /home/smarthome/.hermes/stt-venv/bin/python /usr/local/bin/local_whisper_stt_server.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

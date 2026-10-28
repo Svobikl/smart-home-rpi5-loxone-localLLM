@@ -1,0 +1,7 @@
+faster-whisper>=1.1.0
+useful-moonshine-onnx>=0.1.0
+litert-lm>=0.10.0
+crawl4ai>=0.8.0
+ddgs>=8.0.0
+numpy>=1.26.0
+pytest>=8.0.0

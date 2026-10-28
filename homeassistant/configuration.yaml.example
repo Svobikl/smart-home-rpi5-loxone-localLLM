@@ -1,0 +1,44 @@
+# /usr/share/hassio/homeassistant/configuration.yaml (MySmartHome Example)
+homeassistant:
+  name: MySmartHome
+  latitude: 50.0755
+  longitude: 14.4378
+  elevation: 250
+  unit_system: metric
+  currency: CZK
+  country: CZ
+  time_zone: Europe/Prague
+  language: cs
+
+default_config:
+
+frontend:
+  themes: !include_dir_merge_named themes
+
+command_line:
+  - sensor:
+      name: "Deye 15kW Telemetry"
+      command: "python3 /config/deye_ha_poller.py"
+      scan_interval: 15
+      command_timeout: 12
+      value_template: "{{ value_json.state }}"
+      json_attributes:
+        - run_state_text
+        - pv1_power_w
+        - pv2_power_w
+        - pv_total_power_w
+        - grid_power_total_w
+        - grid_flow_state
+        - load_l1_w
+        - load_l2_w
+        - load_l3_w
+        - load_total_w
+        - day_pv_kwh
+        - day_load_kwh
+        - day_grid_buy_kwh
+        - day_grid_sell_kwh
+        - heatsink_temp_c
+        - battery_soc_pct
+        - battery_power_w
+        - battery_voltage_v
+        - battery_status

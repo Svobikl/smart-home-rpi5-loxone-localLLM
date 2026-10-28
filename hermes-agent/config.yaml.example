@@ -1,0 +1,59 @@
+model:
+  default: gemma-4-E2B-it
+  provider: custom
+  base_url: http://localhost:8091/v1
+
+delegation:
+  model: MiniMax-M3.1-Flash
+  provider: minimax
+  base_url: https://api.minimax.io/anthropic
+  max_iterations: 250
+
+task_model_routing:
+  enabled: true
+  default_model: gemma-4-E2B-it
+  default_provider: custom
+  default_base_url: http://localhost:8091/v1
+  specialist_model: MiniMax-M3.1-Flash
+  specialist_provider: minimax
+  specialist_base_url: https://api.minimax.io/anthropic
+  specialist_categories:
+    - research
+    - implementation
+    - implementation_plan
+
+fallback_providers:
+  - provider: minimax
+    model: MiniMax-M3.1-Flash
+    base_url: https://api.minimax.io/anthropic
+
+display:
+  streaming: true
+
+streaming:
+  enabled: true
+  transport: auto
+  edit_interval: 0.45
+  buffer_threshold: 8
+  cursor: " ▉"
+
+stt:
+  enabled: true
+  provider: local
+  model: gemini-online-with-whisper-cs-moonshine-en-fallback
+  local:
+    command: /usr/local/bin/hermes_local_stt_cli.py
+    args:
+      - "{input_path}"
+      - "--output_dir"
+      - "{output_dir}"
+      - "--language"
+      - "{language}"
+
+compression:
+  enabled: true
+  threshold: 0.50
+  target_ratio: 0.20
+  protect_last_n: 8
+  summary_model: gemini-2.5-flash
+  summary_provider: google

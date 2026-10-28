@@ -1,0 +1,11 @@
+[Unit]
+Description=Force Raspberry Pi 5 PWM Cooling Fan Full Speed (GPIO45 Output High)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c "for c in /sys/class/thermal/cooling_device*; do [ $(cat $c/type 2>/dev/null) = cooling_fan ] && echo 0 > $c/cur_state || true; done; /usr/bin/pinctrl set 45 op dh"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

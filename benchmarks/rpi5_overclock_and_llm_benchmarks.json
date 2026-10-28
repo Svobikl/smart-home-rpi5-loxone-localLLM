@@ -1,0 +1,166 @@
+{
+  "hardware": {
+    "board": "Raspberry Pi 5 Model B Rev 1.0 (8GB LPDDR4X-4267, BCM2712C1)",
+    "storage": "1TB Kingston KC3000 NVMe PCIe Gen 3 (8 GT/s)",
+    "os": "Debian GNU/Linux 12 (Bookworm) aarch64, Kernel 6.12.62+rpt-rpi-2712"
+  },
+  "rpi5_overclock_vs_stock": {
+    "stock_2400mhz": {
+      "arm_freq_mhz": 2400,
+      "v3d_freq_mhz": 960,
+      "gpu_freq_mhz": 910,
+      "sdram_banklow": "default",
+      "numa_nodes": 1,
+      "over_voltage_delta_uv": 0,
+      "seven_zip_mips": 14198,
+      "sysbench_cpu_events_per_sec": 7635.9,
+      "lorenz96_fp64_sec": 3.005,
+      "mbw_memcpy_mib_s": 4050.8,
+      "mbw_mcblock_mib_s": 6352.9,
+      "throttled": "0x0"
+    },
+    "optimized_2800mhz_undervolt_numa8": {
+      "arm_freq_mhz": 2800,
+      "v3d_freq_mhz": 1080,
+      "gpu_freq_mhz": 1000,
+      "sdram_banklow": 1,
+      "numa_nodes": 8,
+      "over_voltage_delta_uv": -35000,
+      "seven_zip_mips": 17052,
+      "sysbench_cpu_events_per_sec": 8897.8,
+      "lorenz96_fp64_sec": 2.578,
+      "mbw_memcpy_mib_s": 5713.9,
+      "mbw_mcblock_mib_s": 8154.0,
+      "max_stress_temp_c": 78.7,
+      "throttled": "0x0"
+    },
+    "speedup_pct": {
+      "seven_zip_mips_pct": "+20.1%",
+      "sysbench_cpu_pct": "+16.5%",
+      "lorenz96_fp64_pct": "+16.6%",
+      "mbw_memcpy_ram_bandwidth_pct": "+41.1%",
+      "mbw_mcblock_ram_bandwidth_pct": "+28.4%"
+    }
+  },
+  "litert_gemma4_benchmarks": {
+    "e2b_default_xnnpack_kv1024": {
+      "model": "google/gemma-4-E2B-it-litert-lm",
+      "backend": "CPU (XNNPACK default)",
+      "threads": 4,
+      "kv_cache_tokens": 1024,
+      "prefill_tps": 35.14,
+      "decode_tps": 8.43,
+      "rss_mb": 2678.2
+    },
+    "e2b_optimized_ynnpack_numa_interleave": {
+      "model": "google/gemma-4-E2B-it-litert-lm",
+      "backend": "CPU (YNNPACK + numactl --interleave=all)",
+      "threads": 4,
+      "kv_cache_tokens": 2048,
+      "prefill_tps": 50.85,
+      "decode_tps": 9.15,
+      "rss_mb": 2610.0,
+      "improvement_vs_default": {
+        "prefill_tps_pct": "+44.7%",
+        "decode_tps_pct": "+8.5%"
+      }
+    },
+    "e2b_thread_scaling_xnnpack": [
+      {
+        "threads": 1,
+        "prefill_tps": 11.79,
+        "decode_tps": 3.43
+      },
+      {
+        "threads": 2,
+        "prefill_tps": 22.84,
+        "decode_tps": 6.45
+      },
+      {
+        "threads": 3,
+        "prefill_tps": 31.12,
+        "decode_tps": 7.67
+      },
+      {
+        "threads": 4,
+        "prefill_tps": 35.14,
+        "decode_tps": 8.43
+      }
+    ],
+    "e4b_Comparison": {
+      "e4b_default_xnnpack": {
+        "model": "google/gemma-4-E4B-it-litert-lm",
+        "prefill_tps": 18.08,
+        "decode_tps": 4.29,
+        "rss_mb": 3695.0
+      },
+      "e4b_optimized_ynnpack": {
+        "model": "google/gemma-4-E4B-it-litert-lm",
+        "prefill_tps": 25.0,
+        "decode_tps": 4.91,
+        "rss_mb": 3592.7
+      }
+    }
+  },
+  "stt_benchmarks_rpi5": {
+    "czech_smart_home_commands": [
+      {
+        "engine": "Online Gemini (gemini-3.1-flash-lite)",
+        "avg_latency_ms": 1731.9,
+        "cer_pct": 0.0,
+        "role": "Primary Default"
+      },
+      {
+        "engine": "Faster-Whisper base (int8, 4 threads, warm)",
+        "avg_latency_ms": 1862.3,
+        "rtf": 0.761,
+        "cer_pct": 0.0,
+        "role": "Local CS Fallback"
+      },
+      {
+        "engine": "Faster-Whisper small (int8, 4 threads, warm)",
+        "avg_latency_ms": 5466.4,
+        "rtf": 2.238,
+        "cer_pct": 0.0,
+        "role": "Reference"
+      },
+      {
+        "engine": "Gemma 4 E2B Native Audio (LiteRT YNNPACK)",
+        "avg_latency_ms": 3545.5,
+        "rtf": 1.446,
+        "cer_pct": 15.76,
+        "role": "Benchmarked only"
+      }
+    ],
+    "english_smart_home_commands": [
+      {
+        "engine": "Moonshine base (ONNX, warm)",
+        "avg_latency_ms": 442.6,
+        "rtf": 0.156,
+        "cer_pct": 0.0,
+        "role": "Local EN Fallback"
+      },
+      {
+        "engine": "Moonshine tiny (ONNX, warm)",
+        "avg_latency_ms": 270.0,
+        "rtf": 0.095,
+        "cer_pct": 0.0,
+        "role": "Fast EN Alternative"
+      },
+      {
+        "engine": "Faster-Whisper base (int8, warm)",
+        "avg_latency_ms": 1621.8,
+        "rtf": 0.573,
+        "cer_pct": 0.0,
+        "role": "Reference"
+      },
+      {
+        "engine": "Gemma 4 E2B Native Audio (LiteRT YNNPACK)",
+        "avg_latency_ms": 2985.1,
+        "rtf": 1.055,
+        "cer_pct": 0.0,
+        "role": "Benchmarked only"
+      }
+    ]
+  }
+}

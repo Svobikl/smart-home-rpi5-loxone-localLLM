@@ -1,0 +1,19 @@
+[Unit]
+Description=Local Gemma 4 E2B LiteRT-LM OpenAI Gateway for Hermes (KV=2048 + YNNPACK + E2B Compactor)
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment="LITERT_MODEL_PATH=/mnt/nvme/ai_models/gemma4_e2b/gemma-4-E2B-it.litertlm"
+Environment="LITERT_THREADS=4"
+Environment="LITERT_MAX_NUM_TOKENS=2048"
+Environment="LITERT_PORT=8091"
+Environment="LITERT_ENABLE_YNNPACK=1"
+Environment="HERMES_SPECIALIST_MODEL=MiniMax-M3.1-Flash"
+ExecStart=/usr/bin/numactl --interleave=all /mnt/nvme/ai_models/litert_env/bin/python /usr/local/bin/hermes_gemma4_litert_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
